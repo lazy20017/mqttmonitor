@@ -1,6 +1,8 @@
 package org.archuser.mqttnotify
 
 import android.annotation.SuppressLint
+import android.content.Context
+import android.content.SharedPreferences
 import android.os.Bundle
 import android.provider.Settings
 import android.widget.Toast
@@ -11,6 +13,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -24,15 +28,73 @@ import com.hivemq.client.mqtt.datatypes.MqttQos
 import com.hivemq.client.mqtt.mqtt3.Mqtt3AsyncClient
 import com.hivemq.client.mqtt.mqtt3.message.publish.Mqtt3Publish
 import kotlinx.coroutines.*
+import org.json.JSONArray
+import org.json.JSONObject
 import java.nio.charset.StandardCharsets
 import java.text.SimpleDateFormat
 import java.util.*
+
+class HistoryManager(context: Context) {
+    private val prefs: SharedPreferences = context.getSharedPreferences("mqtt_history", Context.MODE_PRIVATE)
+    private val maxHistory = 5
+
+    data class ServerConfig(
+        val host: String,
+        val port: String,
+        val username: String,
+        val subscribeTopic: String,
+        val publishTopic: String
+    )
+
+    fun getHistory(): List<ServerConfig> {
+        val json = prefs.getString("history", "[]") ?: "[]"
+        return try {
+            val array = JSONArray(json)
+            (0 until array.length()).map { i ->
+                val obj = array.getJSONObject(i)
+                ServerConfig(
+                    host = obj.getString("host"),
+                    port = obj.getString("port"),
+                    username = obj.getString("username"),
+                    subscribeTopic = obj.getString("subscribeTopic"),
+                    publishTopic = obj.getString("publishTopic")
+                )
+            }
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    fun addConfig(config: ServerConfig) {
+        val history = getHistory().toMutableList()
+        history.removeAll { it.host == config.host && it.port == config.port }
+        history.add(0, config)
+        val trimmed = history.take(maxHistory)
+        saveHistory(trimmed)
+    }
+
+    private fun saveHistory(history: List<ServerConfig>) {
+        val array = JSONArray()
+        history.forEach { config ->
+            val obj = JSONObject().apply {
+                put("host", config.host)
+                put("port", config.port)
+                put("username", config.username)
+                put("subscribeTopic", config.subscribeTopic)
+                put("publishTopic", config.publishTopic)
+            }
+            array.put(obj)
+        }
+        prefs.edit().putString("history", array.toString()).apply()
+    }
+}
 
 class MainActivity : ComponentActivity() {
 
     private var mqttClient: Mqtt3AsyncClient? = null
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val receivedMessages = mutableStateListOf<MessageItem>()
+    private lateinit var historyManager: HistoryManager
 
     @SuppressLint("HardwareIds")
     private fun generateDeviceUsername(): String {
@@ -43,6 +105,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        historyManager = HistoryManager(this)
         val defaultUsername = generateDeviceUsername()
 
         setContent {
@@ -50,8 +113,12 @@ class MainActivity : ComponentActivity() {
                 SimpleMQTTScreen(
                     messages = receivedMessages,
                     defaultUsername = defaultUsername,
+                    historyManager = historyManager,
                     onConnect = { host, port, subscribeTopic, publishTopic, username, password, onResult ->
                         connect(host, port, subscribeTopic, publishTopic, username, password, onResult)
+                        historyManager.addConfig(
+                            HistoryManager.ServerConfig(host, port.toString(), username, subscribeTopic, publishTopic)
+                        )
                     },
                     onDisconnect = { disconnect() },
                     onPublish = { message, publishTopic ->
@@ -232,6 +299,7 @@ enum class MessageType {
 fun SimpleMQTTScreen(
     messages: List<MessageItem>,
     defaultUsername: String,
+    historyManager: HistoryManager,
     onConnect: (String, Int, String, String, String, String, (Boolean) -> Unit) -> Unit,
     onDisconnect: () -> Unit,
     onPublish: (String, String) -> Unit,
@@ -247,6 +315,9 @@ fun SimpleMQTTScreen(
     var isConnecting by remember { mutableStateOf(false) }
     var isConnected by remember { mutableStateOf(false) }
     var connectionStatus by remember { mutableStateOf("未连接") }
+
+    // Load history once
+    val history by remember { mutableStateOf(historyManager.getHistory()) }
 
     LaunchedEffect(isConnected) {
         connectionStatus = if (isConnected) "已连接" else if (isConnecting) "连接中..." else "未连接"
@@ -286,12 +357,20 @@ fun SimpleMQTTScreen(
                         password = password,
                         connectionStatus = connectionStatus,
                         isConnecting = isConnecting,
+                        history = history,
                         onHostChange = { host = it },
                         onPortChange = { port = it },
                         onSubscribeTopicChange = { subscribeTopic = it },
                         onPublishTopicChange = { publishTopic = it },
                         onUsernameChange = { username = it },
                         onPasswordChange = { password = it },
+                        onConfigSelect = { config ->
+                            host = config.host
+                            port = config.port
+                            username = config.username
+                            subscribeTopic = config.subscribeTopic
+                            publishTopic = config.publishTopic
+                        },
                         onConnect = {
                             isConnecting = true
                             connectionStatus = "连接中..."
@@ -318,6 +397,9 @@ fun SimpleMQTTScreen(
                                 onPublish(publishMessage, publishTopic)
                                 publishMessage = ""
                             }
+                        },
+                        onQuickCommand = { cmd ->
+                            onPublish(cmd, publishTopic)
                         }
                     )
                 }
@@ -375,6 +457,7 @@ fun ConnectionStatusCard(connectionStatus: String) {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ConnectionConfigCard(
     host: String,
@@ -385,31 +468,59 @@ fun ConnectionConfigCard(
     password: String,
     connectionStatus: String,
     isConnecting: Boolean,
+    history: List<HistoryManager.ServerConfig>,
     onHostChange: (String) -> Unit,
     onPortChange: (String) -> Unit,
     onSubscribeTopicChange: (String) -> Unit,
     onPublishTopicChange: (String) -> Unit,
     onUsernameChange: (String) -> Unit,
     onPasswordChange: (String) -> Unit,
+    onConfigSelect: (HistoryManager.ServerConfig) -> Unit,
     onConnect: () -> Unit,
     onDisconnect: () -> Unit
 ) {
+    var hostExpanded by remember { mutableStateOf(false) }
+    var usernameExpanded by remember { mutableStateOf(false) }
+    var subscribeTopicExpanded by remember { mutableStateOf(false) }
+    var publishTopicExpanded by remember { mutableStateOf(false) }
+
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Text("服务器配置", style = MaterialTheme.typography.titleMedium)
-
-            OutlinedTextField(
-                value = host,
-                onValueChange = onHostChange,
-                label = { Text("服务器地址") },
-                placeholder = { Text("例如：broker.emqx.io") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                enabled = connectionStatus != "已连接"
-            )
+            // History selector for host
+            ExposedDropdownMenuBox(
+                expanded = hostExpanded,
+                onExpandedChange = { if (connectionStatus != "已连接") hostExpanded = it }
+            ) {
+                OutlinedTextField(
+                    value = host,
+                    onValueChange = onHostChange,
+                    label = { Text("服务器地址") },
+                    placeholder = { Text("例如：broker.emqx.io") },
+                    modifier = Modifier.fillMaxWidth().menuAnchor(),
+                    singleLine = true,
+                    enabled = connectionStatus != "已连接",
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = hostExpanded) }
+                )
+                if (history.isNotEmpty()) {
+                    ExposedDropdownMenu(
+                        expanded = hostExpanded,
+                        onDismissRequest = { hostExpanded = false }
+                    ) {
+                        history.forEach { config ->
+                            DropdownMenuItem(
+                                text = { Text("${config.host}:${config.port}") },
+                                onClick = {
+                                    onConfigSelect(config)
+                                    hostExpanded = false
+                                }
+                            )
+                        }
+                    }
+                }
+            }
 
             OutlinedTextField(
                 value = port,
@@ -426,15 +537,38 @@ fun ConnectionConfigCard(
 
             Text("身份验证", style = MaterialTheme.typography.titleMedium)
 
-            OutlinedTextField(
-                value = username,
-                onValueChange = onUsernameChange,
-                label = { Text("用户名") },
-                placeholder = { Text("根据设备自动生成") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                enabled = connectionStatus != "已连接"
-            )
+            // History selector for username
+            ExposedDropdownMenuBox(
+                expanded = usernameExpanded,
+                onExpandedChange = { if (connectionStatus != "已连接") usernameExpanded = it }
+            ) {
+                OutlinedTextField(
+                    value = username,
+                    onValueChange = onUsernameChange,
+                    label = { Text("用户名") },
+                    placeholder = { Text("根据设备自动生成") },
+                    modifier = Modifier.fillMaxWidth().menuAnchor(),
+                    singleLine = true,
+                    enabled = connectionStatus != "已连接",
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = usernameExpanded) }
+                )
+                if (history.isNotEmpty()) {
+                    ExposedDropdownMenu(
+                        expanded = usernameExpanded,
+                        onDismissRequest = { usernameExpanded = false }
+                    ) {
+                        history.forEach { config ->
+                            DropdownMenuItem(
+                                text = { Text(config.username.ifEmpty { "(空)" }) },
+                                onClick = {
+                                    onConfigSelect(config)
+                                    usernameExpanded = false
+                                }
+                            )
+                        }
+                    }
+                }
+            }
 
             OutlinedTextField(
                 value = password,
@@ -450,25 +584,71 @@ fun ConnectionConfigCard(
 
             Text("主题设置", style = MaterialTheme.typography.titleMedium)
 
-            OutlinedTextField(
-                value = subscribeTopic,
-                onValueChange = onSubscribeTopicChange,
-                label = { Text("订阅主题") },
-                placeholder = { Text("接收消息的主题，例如：sensor/data") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                enabled = connectionStatus != "已连接"
-            )
+            // History selector for subscribe topic
+            ExposedDropdownMenuBox(
+                expanded = subscribeTopicExpanded,
+                onExpandedChange = { if (connectionStatus != "已连接") subscribeTopicExpanded = it }
+            ) {
+                OutlinedTextField(
+                    value = subscribeTopic,
+                    onValueChange = onSubscribeTopicChange,
+                    label = { Text("订阅主题") },
+                    placeholder = { Text("接收消息的主题") },
+                    modifier = Modifier.fillMaxWidth().menuAnchor(),
+                    singleLine = true,
+                    enabled = connectionStatus != "已连接",
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = subscribeTopicExpanded) }
+                )
+                if (history.isNotEmpty()) {
+                    ExposedDropdownMenu(
+                        expanded = subscribeTopicExpanded,
+                        onDismissRequest = { subscribeTopicExpanded = false }
+                    ) {
+                        history.forEach { config ->
+                            DropdownMenuItem(
+                                text = { Text(config.subscribeTopic) },
+                                onClick = {
+                                    onConfigSelect(config)
+                                    subscribeTopicExpanded = false
+                                }
+                            )
+                        }
+                    }
+                }
+            }
 
-            OutlinedTextField(
-                value = publishTopic,
-                onValueChange = onPublishTopicChange,
-                label = { Text("发布主题") },
-                placeholder = { Text("发送消息的主题，例如：sensor/control") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                enabled = connectionStatus != "已连接"
-            )
+            // History selector for publish topic
+            ExposedDropdownMenuBox(
+                expanded = publishTopicExpanded,
+                onExpandedChange = { if (connectionStatus != "已连接") publishTopicExpanded = it }
+            ) {
+                OutlinedTextField(
+                    value = publishTopic,
+                    onValueChange = onPublishTopicChange,
+                    label = { Text("发布主题") },
+                    placeholder = { Text("发送消息的主题") },
+                    modifier = Modifier.fillMaxWidth().menuAnchor(),
+                    singleLine = true,
+                    enabled = connectionStatus != "已连接",
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = publishTopicExpanded) }
+                )
+                if (history.isNotEmpty()) {
+                    ExposedDropdownMenu(
+                        expanded = publishTopicExpanded,
+                        onDismissRequest = { publishTopicExpanded = false }
+                    ) {
+                        history.forEach { config ->
+                            DropdownMenuItem(
+                                text = { Text(config.publishTopic) },
+                                onClick = {
+                                    onConfigSelect(config)
+                                    publishTopicExpanded = false
+                                }
+                            )
+                        }
+                    }
+                }
+            }
 
             Spacer(modifier = Modifier.height(8.dp))
 
@@ -502,7 +682,8 @@ fun PublishMessageCard(
     publishMessage: String,
     connectionStatus: String,
     onPublishMessageChange: (String) -> Unit,
-    onPublish: () -> Unit
+    onPublish: () -> Unit,
+    onQuickCommand: (String) -> Unit
 ) {
     val focusManager = LocalFocusManager.current
 
@@ -512,6 +693,65 @@ fun PublishMessageCard(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Text("发送消息", style = MaterialTheme.typography.titleMedium)
+
+            // Quick Command Buttons - LED
+            Text("LED 控制", style = MaterialTheme.typography.labelMedium)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                FilledTonalButton(
+                    onClick = { onQuickCommand("""{"led":"led1","state":"on"}""") },
+                    enabled = connectionStatus == "已连接",
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("LED1 开")
+                }
+                FilledTonalButton(
+                    onClick = { onQuickCommand("""{"led":"led1","state":"off"}""") },
+                    enabled = connectionStatus == "已连接",
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("LED1 关")
+                }
+                FilledTonalButton(
+                    onClick = { onQuickCommand("""{"led":"led2","state":"on"}""") },
+                    enabled = connectionStatus == "已连接",
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("LED2 开")
+                }
+                FilledTonalButton(
+                    onClick = { onQuickCommand("""{"led":"led2","state":"off"}""") },
+                    enabled = connectionStatus == "已连接",
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("LED2 关")
+                }
+            }
+
+            // Quick Command Buttons - Buzzer
+            Text("蜂鸣器控制", style = MaterialTheme.typography.labelMedium)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                FilledTonalButton(
+                    onClick = { onQuickCommand("""{"buzzer":"on"}""") },
+                    enabled = connectionStatus == "已连接",
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("蜂鸣器 开")
+                }
+                FilledTonalButton(
+                    onClick = { onQuickCommand("""{"buzzer":"off"}""") },
+                    enabled = connectionStatus == "已连接",
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("蜂鸣器 关")
+                }
+                Spacer(modifier = Modifier.weight(2f))
+            }
 
             OutlinedTextField(
                 value = publishMessage,
