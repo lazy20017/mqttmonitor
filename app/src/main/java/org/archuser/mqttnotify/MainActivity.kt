@@ -9,8 +9,6 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
@@ -74,10 +72,11 @@ class MainActivity : ComponentActivity() {
         password: String,
         onResult: (Boolean) -> Unit
     ) {
+        val activity = this
         scope.launch {
             try {
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(this@MainActivity, "正在连接...", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(activity, "正在连接...", Toast.LENGTH_SHORT).show()
                 }
 
                 val builder = MqttClient.builder()
@@ -107,10 +106,9 @@ class MainActivity : ComponentActivity() {
                         if (throwable != null) {
                             onResult(false)
                             scope.launch(Dispatchers.Main) {
-                                Toast.makeText(this@MainActivity, "连接失败: ${throwable.message}", Toast.LENGTH_LONG).show()
+                                Toast.makeText(activity, "连接失败: " + (throwable.message ?: "未知错误"), Toast.LENGTH_LONG).show()
                             }
                         } else {
-                            // 连接成功后再订阅
                             mqttClient?.subscribeWith()
                                 ?.topicFilter(subscribeTopic)
                                 ?.qos(MqttQos.AT_LEAST_ONCE)
@@ -131,46 +129,48 @@ class MainActivity : ComponentActivity() {
                                 ?.whenComplete { subThrowable, _ ->
                                     if (subThrowable != null) {
                                         scope.launch(Dispatchers.Main) {
-                                            Toast.makeText(this@MainActivity, "订阅失败: ${subThrowable.message}", Toast.LENGTH_LONG).show()
+                                            Toast.makeText(activity, "订阅失败", Toast.LENGTH_LONG).show()
                                         }
                                     }
                                 }
 
                             onResult(true)
                             scope.launch(Dispatchers.Main) {
-                                Toast.makeText(this@MainActivity, "连接成功", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(activity, "连接成功", Toast.LENGTH_SHORT).show()
                             }
                         }
                     }
 
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(this@MainActivity, "连接错误: ${e.message}", Toast.LENGTH_LONG).show()
+                    Toast.makeText(activity, "连接错误: ${e.message}", Toast.LENGTH_LONG).show()
                 }
             }
         }
     }
 
     private fun disconnect() {
+        val activity = this
         scope.launch {
             try {
                 mqttClient?.disconnect()?.join()
                 mqttClient = null
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(this@MainActivity, "已断开连接", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(activity, "已断开连接", Toast.LENGTH_SHORT).show()
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(this@MainActivity, "断开错误: ${e.message}", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(activity, "断开错误: ${e.message}", Toast.LENGTH_SHORT).show()
                 }
             }
         }
     }
 
     private fun publish(message: String, publishTopic: String) {
+        val activity = this
         if (mqttClient == null) {
             scope.launch(Dispatchers.Main) {
-                Toast.makeText(this@MainActivity, "请先连接", Toast.LENGTH_SHORT).show()
+                Toast.makeText(activity, "请先连接", Toast.LENGTH_SHORT).show()
             }
             return
         }
@@ -193,17 +193,17 @@ class MainActivity : ComponentActivity() {
                                     type = MessageType.SENT
                                 )
                                 receivedMessages.add(0, newMessage)
-                                Toast.makeText(this@MainActivity, "发送成功", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(activity, "发送成功", Toast.LENGTH_SHORT).show()
                             }
                         } else {
                             scope.launch(Dispatchers.Main) {
-                                Toast.makeText(this@MainActivity, "发送失败: ${throwable.message}", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(activity, "发送失败: " + (throwable.message ?: "未知错误"), Toast.LENGTH_SHORT).show()
                             }
                         }
                     }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(this@MainActivity, "发送错误: ${e.message}", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(activity, "发送错误: ${e.message}", Toast.LENGTH_SHORT).show()
                 }
             }
         }
@@ -248,17 +248,8 @@ fun SimpleMQTTScreen(
     var isConnected by remember { mutableStateOf(false) }
     var connectionStatus by remember { mutableStateOf("未连接") }
 
-    val scrollState = rememberScrollState()
-    val focusManager = LocalFocusManager.current
-
     LaunchedEffect(isConnected) {
         connectionStatus = if (isConnected) "已连接" else if (isConnecting) "连接中..." else "未连接"
-    }
-
-    LaunchedEffect(messages.size) {
-        if (messages.isNotEmpty()) {
-            scrollState.scrollTo(0)
-        }
     }
 
     Scaffold(
@@ -275,263 +266,329 @@ fun SimpleMQTTScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .padding(horizontal = 16.dp)
-                .verticalScroll(scrollState),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // 连接状态
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(
-                    containerColor = when {
-                        connectionStatus == "已连接" -> MaterialTheme.colorScheme.primaryContainer
-                        connectionStatus == "连接中..." -> MaterialTheme.colorScheme.tertiaryContainer
-                        else -> MaterialTheme.colorScheme.errorContainer
-                    }
-                )
+            ConnectionStatusCard(connectionStatus = connectionStatus)
+
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f, fill = false),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Text(
-                    text = "状态: $connectionStatus",
-                    modifier = Modifier.padding(12.dp),
-                    style = MaterialTheme.typography.bodyLarge
-                )
-            }
-
-            // 连接配置
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Text("服务器配置", style = MaterialTheme.typography.titleMedium)
-
-                    // 服务器地址
-                    Text("服务器地址", style = MaterialTheme.typography.labelLarge)
-                    OutlinedTextField(
-                        value = host,
-                        onValueChange = { host = it },
-                        placeholder = { Text("例如：broker.emqx.io") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        enabled = connectionStatus != "已连接"
-                    )
-
-                    // 端口
-                    Text("端口号", style = MaterialTheme.typography.labelLarge)
-                    OutlinedTextField(
-                        value = port,
-                        onValueChange = { port = it },
-                        placeholder = { Text("默认：1883") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        enabled = connectionStatus != "已连接"
-                    )
-
-                    HorizontalDivider()
-
-                    Text("身份验证", style = MaterialTheme.typography.titleMedium)
-
-                    // 用户名
-                    Text("用户名", style = MaterialTheme.typography.labelLarge)
-                    OutlinedTextField(
-                        value = username,
-                        onValueChange = { username = it },
-                        placeholder = { Text("根据设备自动生成") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        enabled = connectionStatus != "已连接"
-                    )
-
-                    // 密码
-                    Text("密码（可选）", style = MaterialTheme.typography.labelLarge)
-                    OutlinedTextField(
-                        value = password,
-                        onValueChange = { password = it },
-                        placeholder = { Text("留空表示不需要密码") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        enabled = connectionStatus != "已连接"
-                    )
-
-                    HorizontalDivider()
-
-                    Text("主题设置", style = MaterialTheme.typography.titleMedium)
-
-                    // 订阅主题
-                    Text("订阅主题（接收消息）", style = MaterialTheme.typography.labelLarge)
-                    Text(
-                        "设置要监听的主题，例如：sensor/data",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    OutlinedTextField(
-                        value = subscribeTopic,
-                        onValueChange = { subscribeTopic = it },
-                        placeholder = { Text("例如：sensor/data") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        enabled = connectionStatus != "已连接"
-                    )
-
-                    // 发布主题
-                    Text("发布主题（发送消息）", style = MaterialTheme.typography.labelLarge)
-                    Text(
-                        "发送消息时使用的主题前缀",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    OutlinedTextField(
-                        value = publishTopic,
-                        onValueChange = { publishTopic = it },
-                        placeholder = { Text("例如：sensor/control") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        enabled = connectionStatus != "已连接"
-                    )
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        if (connectionStatus != "已连接") {
-                            Button(
-                                onClick = {
-                                    isConnecting = true
-                                    connectionStatus = "连接中..."
-                                    onConnect(host, port.toIntOrNull() ?: 1883, subscribeTopic, publishTopic, username, password) { success ->
-                                        isConnecting = false
-                                        isConnected = success
-                                    }
-                                },
-                                modifier = Modifier.weight(1f),
-                                enabled = !isConnecting
-                            ) {
-                                Text(if (isConnecting) "连接中..." else "连接服务器")
+                item {
+                    ConnectionConfigCard(
+                        host = host,
+                        port = port,
+                        subscribeTopic = subscribeTopic,
+                        publishTopic = publishTopic,
+                        username = username,
+                        password = password,
+                        connectionStatus = connectionStatus,
+                        isConnecting = isConnecting,
+                        onHostChange = { host = it },
+                        onPortChange = { port = it },
+                        onSubscribeTopicChange = { subscribeTopic = it },
+                        onPublishTopicChange = { publishTopic = it },
+                        onUsernameChange = { username = it },
+                        onPasswordChange = { password = it },
+                        onConnect = {
+                            isConnecting = true
+                            connectionStatus = "连接中..."
+                            onConnect(host, port.toIntOrNull() ?: 1883, subscribeTopic, publishTopic, username, password) { success ->
+                                isConnecting = false
+                                isConnected = success
                             }
-                        } else {
-                            Button(
-                                onClick = {
-                                    isConnecting = false
-                                    connectionStatus = "未连接"
-                                    onDisconnect()
-                                },
-                                modifier = Modifier.weight(1f),
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = MaterialTheme.colorScheme.error
-                                )
-                            ) {
-                                Text("断开连接")
-                            }
+                        },
+                        onDisconnect = {
+                            isConnecting = false
+                            connectionStatus = "未连接"
+                            onDisconnect()
                         }
-                    }
-                }
-            }
-
-            // 发布消息
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Text("发送消息", style = MaterialTheme.typography.titleMedium)
-
-                    OutlinedTextField(
-                        value = publishMessage,
-                        onValueChange = { publishMessage = it },
-                        label = { Text("消息内容") },
-                        placeholder = { Text("输入要发送的消息...") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                        keyboardActions = KeyboardActions(
-                            onSend = {
-                                if (publishMessage.isNotEmpty()) {
-                                    onPublish(publishMessage, publishTopic)
-                                    publishMessage = ""
-                                    focusManager.clearFocus()
-                                }
-                            }
-                        ),
-                        enabled = connectionStatus == "已连接"
                     )
+                }
 
-                    Button(
-                        onClick = {
+                item {
+                    PublishMessageCard(
+                        publishMessage = publishMessage,
+                        connectionStatus = connectionStatus,
+                        onPublishMessageChange = { publishMessage = it },
+                        onPublish = {
                             if (publishMessage.isNotEmpty()) {
                                 onPublish(publishMessage, publishTopic)
                                 publishMessage = ""
                             }
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        enabled = connectionStatus == "已连接" && publishMessage.isNotEmpty()
-                    ) {
-                        Text("发送")
-                    }
-
-                    if (connectionStatus != "已连接") {
-                        Text(
-                            "请先连接服务器才能发送消息",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error
-                        )
-                    }
+                        }
+                    )
                 }
             }
 
-            // 消息列表
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                item {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("消息记录 (${messages.size})", style = MaterialTheme.typography.titleMedium)
+                        if (messages.isNotEmpty()) {
+                            TextButton(onClick = onClearMessages) {
+                                Text("清空")
+                            }
+                        }
+                    }
+                }
+
+                items(messages, key = { "${it.time}_${it.payload}" }) { message ->
+                    MessageItemCard(message = message)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun ConnectionStatusCard(connectionStatus: String) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = when {
+                connectionStatus == "已连接" -> MaterialTheme.colorScheme.primaryContainer
+                connectionStatus == "连接中..." -> MaterialTheme.colorScheme.tertiaryContainer
+                else -> MaterialTheme.colorScheme.errorContainer
+            }
+        )
+    ) {
+        Text(
+            text = "状态: $connectionStatus",
+            modifier = Modifier.padding(12.dp),
+            style = MaterialTheme.typography.bodyLarge
+        )
+    }
+}
+
+@Composable
+fun ConnectionConfigCard(
+    host: String,
+    port: String,
+    subscribeTopic: String,
+    publishTopic: String,
+    username: String,
+    password: String,
+    connectionStatus: String,
+    isConnecting: Boolean,
+    onHostChange: (String) -> Unit,
+    onPortChange: (String) -> Unit,
+    onSubscribeTopicChange: (String) -> Unit,
+    onPublishTopicChange: (String) -> Unit,
+    onUsernameChange: (String) -> Unit,
+    onPasswordChange: (String) -> Unit,
+    onConnect: () -> Unit,
+    onDisconnect: () -> Unit
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text("服务器配置", style = MaterialTheme.typography.titleMedium)
+
+            OutlinedTextField(
+                value = host,
+                onValueChange = onHostChange,
+                label = { Text("服务器地址") },
+                placeholder = { Text("例如：broker.emqx.io") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                enabled = connectionStatus != "已连接"
+            )
+
+            OutlinedTextField(
+                value = port,
+                onValueChange = onPortChange,
+                label = { Text("端口号") },
+                placeholder = { Text("默认：1883") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                enabled = connectionStatus != "已连接"
+            )
+
+            HorizontalDivider()
+
+            Text("身份验证", style = MaterialTheme.typography.titleMedium)
+
+            OutlinedTextField(
+                value = username,
+                onValueChange = onUsernameChange,
+                label = { Text("用户名") },
+                placeholder = { Text("根据设备自动生成") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                enabled = connectionStatus != "已连接"
+            )
+
+            OutlinedTextField(
+                value = password,
+                onValueChange = onPasswordChange,
+                label = { Text("密码（可选）") },
+                placeholder = { Text("留空表示不需要密码") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                enabled = connectionStatus != "已连接"
+            )
+
+            HorizontalDivider()
+
+            Text("主题设置", style = MaterialTheme.typography.titleMedium)
+
+            OutlinedTextField(
+                value = subscribeTopic,
+                onValueChange = onSubscribeTopicChange,
+                label = { Text("订阅主题") },
+                placeholder = { Text("接收消息的主题，例如：sensor/data") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                enabled = connectionStatus != "已连接"
+            )
+
+            OutlinedTextField(
+                value = publishTopic,
+                onValueChange = onPublishTopicChange,
+                label = { Text("发布主题") },
+                placeholder = { Text("发送消息的主题，例如：sensor/control") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                enabled = connectionStatus != "已连接"
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (connectionStatus != "已连接") {
+                    Button(
+                        onClick = onConnect,
+                        modifier = Modifier.weight(1f),
+                        enabled = !isConnecting
+                    ) {
+                        Text(if (isConnecting) "连接中..." else "连接服务器")
+                    }
+                } else {
+                    Button(
+                        onClick = onDisconnect,
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.error
+                        )
+                    ) {
+                        Text("断开连接")
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun PublishMessageCard(
+    publishMessage: String,
+    connectionStatus: String,
+    onPublishMessageChange: (String) -> Unit,
+    onPublish: () -> Unit
+) {
+    val focusManager = LocalFocusManager.current
+
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text("发送消息", style = MaterialTheme.typography.titleMedium)
+
+            OutlinedTextField(
+                value = publishMessage,
+                onValueChange = onPublishMessageChange,
+                label = { Text("消息内容") },
+                placeholder = { Text("输入要发送的消息...") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                keyboardActions = KeyboardActions(
+                    onSend = {
+                        if (publishMessage.isNotEmpty()) {
+                            onPublish()
+                            focusManager.clearFocus()
+                        }
+                    }
+                ),
+                enabled = connectionStatus == "已连接"
+            )
+
+            Button(
+                onClick = onPublish,
+                modifier = Modifier.fillMaxWidth(),
+                enabled = connectionStatus == "已连接" && publishMessage.isNotEmpty()
+            ) {
+                Text("发送")
+            }
+
+            if (connectionStatus != "已连接") {
+                Text(
+                    "请先连接服务器才能发送消息",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun MessageItemCard(message: MessageItem) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = if (message.type == MessageType.SENT)
+                MaterialTheme.colorScheme.secondaryContainer
+            else
+                MaterialTheme.colorScheme.tertiaryContainer
+        )
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("消息记录 (${messages.size})", style = MaterialTheme.typography.titleMedium)
-                if (messages.isNotEmpty()) {
-                    TextButton(onClick = onClearMessages) {
-                        Text("清空")
-                    }
-                }
+                Text(
+                    text = if (message.type == MessageType.SENT) "发送" else "接收",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Text(
+                    text = message.time,
+                    style = MaterialTheme.typography.bodySmall
+                )
             }
-
-            messages.forEach { message ->
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(
-                        containerColor = if (message.type == MessageType.SENT)
-                            MaterialTheme.colorScheme.secondaryContainer
-                        else
-                            MaterialTheme.colorScheme.tertiaryContainer
-                    )
-                ) {
-                    Column(modifier = Modifier.padding(12.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = if (message.type == MessageType.SENT) "发送" else "接收",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                            Text(
-                                text = message.time,
-                                style = MaterialTheme.typography.labelSmall
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = "主题: ${message.topic}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = message.payload,
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                    }
-                }
-            }
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "主题: ${message.topic}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = message.payload,
+                style = MaterialTheme.typography.bodyMedium
+            )
         }
     }
 }
