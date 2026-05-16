@@ -832,3 +832,38 @@ fun MessageItemCard(message: MessageItem) {
         }
     }
 }
+
+@Preview(showBackground = true)
+@Composable
+fun DefaultPreview() {
+    MqttNotifyTheme {
+        // 预览整个界面
+        Surface(
+            modifier = Modifier.fillMaxSize(),
+            color = MaterialTheme.colorScheme.background
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp)
+            ) {
+                Text("MQTT Monitor Preview", style = MaterialTheme.typography.headlineMedium)
+                Spacer(modifier = Modifier.height(16.dp))
+                Text("Broker: test.mqtt.com", style = MaterialTheme.typography.bodyLarge)
+                Text("Status: Connected", style = MaterialTheme.typography.bodyMedium)
+            }
+        }
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+fun MessageItemPreview() {
+    MqttNotifyTheme {
+        MessageItem(
+            id = "1",
+            topic = "home/sensor/temperature",
+            payload = "25.5°C",
+            timestamp = System.currentTimeMillis(),
+            isRead = false
+        )
+    }
+}
