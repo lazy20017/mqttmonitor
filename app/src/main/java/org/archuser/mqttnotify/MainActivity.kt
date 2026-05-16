@@ -23,6 +23,7 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.tooling.preview.Preview
 import com.hivemq.client.mqtt.MqttClient
 import com.hivemq.client.mqtt.datatypes.MqttQos
 import com.hivemq.client.mqtt.mqtt3.Mqtt3AsyncClient
@@ -836,8 +837,7 @@ fun MessageItemCard(message: MessageItem) {
 @Preview(showBackground = true)
 @Composable
 fun DefaultPreview() {
-    MqttNotifyTheme {
-        // 预览整个界面
+    MaterialTheme {
         Surface(
             modifier = Modifier.fillMaxSize(),
             color = MaterialTheme.colorScheme.background
@@ -857,13 +857,14 @@ fun DefaultPreview() {
 @Preview(showBackground = true)
 @Composable
 fun MessageItemPreview() {
-    MqttNotifyTheme {
-        MessageItem(
-            id = "1",
-            topic = "home/sensor/temperature",
-            payload = "25.5°C",
-            timestamp = System.currentTimeMillis(),
-            isRead = false
+    MaterialTheme {
+        MessageItemCard(
+            message = MessageItem(
+                topic = "home/sensor/temperature",
+                payload = "25.5°C",
+                time = "12:30:45",
+                type = MessageType.RECEIVED
+            )
         )
     }
 }
