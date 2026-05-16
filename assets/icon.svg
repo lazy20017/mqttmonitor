@@ -1,0 +1,48 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  viewBox="0 0 512 512"
+  width="512"
+  height="512">
+
+  <!-- Background -->
+  <rect x="0" y="0" width="512" height="512" rx="96" fill="#FFFFFF"/>
+
+  <!-- MQTT signal arcs -->
+  <path d="M256 120
+           A136 136 0 0 1 392 256"
+        fill="none"
+        stroke="#1E88E5"
+        stroke-width="24"
+        stroke-linecap="round"/>
+
+  <path d="M256 168
+           A88 88 0 0 1 344 256"
+        fill="none"
+        stroke="#1E88E5"
+        stroke-width="24"
+        stroke-linecap="round"/>
+
+  <path d="M256 216
+           A40 40 0 0 1 296 256"
+        fill="none"
+        stroke="#1E88E5"
+        stroke-width="24"
+        stroke-linecap="round"/>
+
+  <!-- Message bubble -->
+  <rect x="120" y="256" width="272" height="128" rx="16" fill="#E0E0E0"/>
+  <polygon points="184,384 184,416 216,384" fill="#E0E0E0"/>
+
+  <!-- MQTT text inside bubble -->
+  <text x="256"
+        y="336"
+        text-anchor="middle"
+        font-size="64"
+        font-family="sans-serif"
+        font-weight="600"
+        fill="#424242">
+    MQTT
+  </text>
+
+</svg>
+
