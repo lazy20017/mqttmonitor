@@ -1,14 +1,7 @@
 <resources>
-    <style name="Theme.Mqttnotify" parent="Theme.MaterialComponents.DayNight.NoActionBar">
-        <item name="colorPrimary">@color/purple_200</item>
-        <item name="colorPrimaryVariant">@color/purple_700</item>
-        <item name="colorOnPrimary">@color/black</item>
-        <item name="colorSecondary">@color/teal_200</item>
-        <item name="colorSecondaryVariant">@color/teal_200</item>
-        <item name="colorOnSecondary">@color/black</item>
-        <item name="android:statusBarColor">?attr/colorPrimaryVariant</item>
+    <style name="Theme.Mqttnotify" parent="android:Theme.Material.NoActionBar">
     </style>
 
-    <style name="Theme.Mqttnotify.AppBarOverlay" parent="ThemeOverlay.AppCompat.Dark.ActionBar" />
-    <style name="Theme.Mqttnotify.PopupOverlay" parent="ThemeOverlay.AppCompat.Light" />
+    <style name="Theme.Mqttnotify.AppBarOverlay" parent="ThemeOverlay.Material3.Dark.ActionBar" />
+    <style name="Theme.Mqttnotify.PopupOverlay" parent="ThemeOverlay.Material3.Light" />
 </resources>
