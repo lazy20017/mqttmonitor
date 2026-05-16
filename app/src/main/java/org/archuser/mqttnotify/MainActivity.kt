@@ -834,29 +834,33 @@ fun MessageItemCard(message: MessageItem) {
     }
 }
 
-@Preview(showBackground = true)
+@Preview(showBackground = true, name = "连接状态 - 已连接")
 @Composable
-fun DefaultPreview() {
+fun ConnectionStatusConnectedPreview() {
     MaterialTheme {
-        Surface(
-            modifier = Modifier.fillMaxSize(),
-            color = MaterialTheme.colorScheme.background
-        ) {
-            Column(
-                modifier = Modifier.padding(16.dp)
-            ) {
-                Text("MQTT Monitor Preview", style = MaterialTheme.typography.headlineMedium)
-                Spacer(modifier = Modifier.height(16.dp))
-                Text("Broker: test.mqtt.com", style = MaterialTheme.typography.bodyLarge)
-                Text("Status: Connected", style = MaterialTheme.typography.bodyMedium)
-            }
-        }
+        ConnectionStatusCard(connectionStatus = "已连接")
     }
 }
 
-@Preview(showBackground = true)
+@Preview(showBackground = true, name = "连接状态 - 未连接")
 @Composable
-fun MessageItemPreview() {
+fun ConnectionStatusDisconnectedPreview() {
+    MaterialTheme {
+        ConnectionStatusCard(connectionStatus = "未连接")
+    }
+}
+
+@Preview(showBackground = true, name = "连接状态 - 连接中")
+@Composable
+fun ConnectionStatusConnectingPreview() {
+    MaterialTheme {
+        ConnectionStatusCard(connectionStatus = "连接中...")
+    }
+}
+
+@Preview(showBackground = true, name = "消息卡片 - 接收")
+@Composable
+fun MessageItemReceivedPreview() {
     MaterialTheme {
         MessageItemCard(
             message = MessageItem(
@@ -865,6 +869,49 @@ fun MessageItemPreview() {
                 time = "12:30:45",
                 type = MessageType.RECEIVED
             )
+        )
+    }
+}
+
+@Preview(showBackground = true, name = "消息卡片 - 发送")
+@Composable
+fun MessageItemSentPreview() {
+    MaterialTheme {
+        MessageItemCard(
+            message = MessageItem(
+                topic = "test/publish",
+                payload = "Hello MQTT!",
+                time = "12:31:00",
+                type = MessageType.SENT
+            )
+        )
+    }
+}
+
+@Preview(showBackground = true, name = "发送消息面板 - 已连接")
+@Composable
+fun PublishMessageCardConnectedPreview() {
+    MaterialTheme {
+        PublishMessageCard(
+            publishMessage = "",
+            connectionStatus = "已连接",
+            onPublishMessageChange = {},
+            onPublish = {},
+            onQuickCommand = {}
+        )
+    }
+}
+
+@Preview(showBackground = true, name = "发送消息面板 - 未连接")
+@Composable
+fun PublishMessageCardDisconnectedPreview() {
+    MaterialTheme {
+        PublishMessageCard(
+            publishMessage = "Hello",
+            connectionStatus = "未连接",
+            onPublishMessageChange = {},
+            onPublish = {},
+            onQuickCommand = {}
         )
     }
 }
