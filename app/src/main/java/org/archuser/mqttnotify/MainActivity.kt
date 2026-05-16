@@ -110,30 +110,38 @@ class MainActivity : ComponentActivity() {
                                 Toast.makeText(this@MainActivity, "连接失败: ${throwable.message}", Toast.LENGTH_LONG).show()
                             }
                         } else {
+                            // 连接成功后再订阅
+                            mqttClient?.subscribeWith()
+                                ?.topicFilter(subscribeTopic)
+                                ?.qos(MqttQos.AT_LEAST_ONCE)
+                                ?.callback { publish: Mqtt3Publish ->
+                                    val payload = String(publish.payloadAsBytes, StandardCharsets.UTF_8)
+                                    val time = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
+                                    scope.launch(Dispatchers.Main) {
+                                        val newMessage = MessageItem(
+                                            topic = publish.topic.toString(),
+                                            payload = payload,
+                                            time = time,
+                                            type = MessageType.RECEIVED
+                                        )
+                                        receivedMessages.add(0, newMessage)
+                                    }
+                                }
+                                ?.send()
+                                ?.whenComplete { subThrowable, _ ->
+                                    if (subThrowable != null) {
+                                        scope.launch(Dispatchers.Main) {
+                                            Toast.makeText(this@MainActivity, "订阅失败: ${subThrowable.message}", Toast.LENGTH_LONG).show()
+                                        }
+                                    }
+                                }
+
                             onResult(true)
                             scope.launch(Dispatchers.Main) {
                                 Toast.makeText(this@MainActivity, "连接成功", Toast.LENGTH_SHORT).show()
                             }
                         }
                     }
-
-                mqttClient?.subscribeWith()
-                    ?.topicFilter(subscribeTopic)
-                    ?.qos(MqttQos.AT_LEAST_ONCE)
-                    ?.callback { publish: Mqtt3Publish ->
-                        val payload = String(publish.payloadAsBytes, StandardCharsets.UTF_8)
-                        val time = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
-                        scope.launch(Dispatchers.Main) {
-                            val newMessage = MessageItem(
-                                topic = publish.topic.toString(),
-                                payload = payload,
-                                time = time,
-                                type = MessageType.RECEIVED
-                            )
-                            receivedMessages.add(0, newMessage)
-                        }
-                    }
-                    ?.send()
 
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
